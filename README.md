@@ -1,13 +1,17 @@
-# nix-01
+# nix-basecamp
 
-Nix-native system setup for macOS and Linux. The flake **is** the CLI.
+A basecamp for expeditions into any machine — including temporary ones.
+One command deploys my pre-arranged minimal setup, so work on a fresh or
+borrowed system starts from a safe, fast, systematic base instead of zero.
+
+Nix-native, for macOS and Linux. The flake **is** the CLI.
 
 ```sh
 # 1) Nix (once per machine)
 curl -fsSL https://install.determinate.systems/nix | sh -s -- install
 
 # 2) Everything else — shows the module plan, asks, applies
-nix run 'git+https://github.com/ajchemist/nix-01.git'
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git'
 ```
 
 ## Discoverability
@@ -15,25 +19,25 @@ nix run 'git+https://github.com/ajchemist/nix-01.git'
 Every module is a flake app, so the standard nix commands reveal everything:
 
 ```sh
-nix flake show 'git+https://github.com/ajchemist/nix-01.git'        # list all modules/outputs
-nix run 'git+https://github.com/ajchemist/nix-01.git#plan'         # status table, read-only
-nix run 'git+https://github.com/ajchemist/nix-01.git' -- --dry-run # same, via the default app
+nix flake show 'git+https://github.com/ajchemist/nix-basecamp.git'        # list all modules/outputs
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git#plan'         # status table, read-only
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git' -- --dry-run # same, via the default app
 ```
 
 Apply everything, or a single module:
 
 ```sh
-nix run 'git+https://github.com/ajchemist/nix-01.git'                # plan -> confirm -> apply all
-nix run 'git+https://github.com/ajchemist/nix-01.git' -- --yes       # no prompt
-nix run 'git+https://github.com/ajchemist/nix-01.git#karabiner-rule' # just the karabiner rule
-nix run 'git+https://github.com/ajchemist/nix-01.git#darwin'         # just nix-darwin activation
-nix run 'git+https://github.com/ajchemist/nix-01.git#homebrew'       # just homebrew
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git'                # plan -> confirm -> apply all
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git' -- --yes       # no prompt
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git#karabiner-rule' # just the karabiner rule
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git#darwin'         # just nix-darwin activation
+nix run 'git+https://github.com/ajchemist/nix-basecamp.git#homebrew'       # just homebrew
 ```
 
 The plan looks like:
 
 ```
-nix-01 · Darwin (arm64) · darwinConfigurations.default
+nix-basecamp · Darwin (arm64) · darwinConfigurations.default
 
   [•] homebrew        Homebrew package manager                       install
   [•] nix-darwin      system profile                                 activate new generation

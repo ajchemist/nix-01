@@ -1,5 +1,5 @@
 {
-  description = "One-command system setup: nix run git+https://github.com/ajchemist/nix-01.git";
+  description = "One-command system setup: nix run git+https://github.com/ajchemist/nix-basecamp.git";
 
   inputs = {
     # nixpkgs uses the GitHub tarball fetcher: a shallow git clone of nixpkgs
@@ -101,7 +101,7 @@
             text = ''
               row() { printf '  [%s] %-15s %-46s %s\n' "$@"; }
               echo ""
-              echo "nix-01 · $(uname -s) ($(uname -m)) · darwinConfigurations.default"
+              echo "nix-basecamp · $(uname -s) ($(uname -m)) · darwinConfigurations.default"
               echo ""
               if command -v brew >/dev/null 2>&1; then
                 row "✓" homebrew "Homebrew package manager" "up to date"
