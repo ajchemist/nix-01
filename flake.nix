@@ -196,6 +196,10 @@
 
               ${lib.getExe homebrew}
               ${lib.getExe darwin}
+              # The darwin step exits early when the system closure is already
+              # current, but state outside the nix store (karabiner.json) can
+              # still have drifted — converge it unconditionally (idempotent).
+              ${lib.getExe karabiner-rule}
               echo ""
               echo "result:"
               ${lib.getExe plan}
