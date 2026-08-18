@@ -2,9 +2,10 @@
   description = "One-command system setup: nix run git+https://github.com/ajchemist/nix-01.git";
 
   inputs = {
-    # Use Git rather than GitHub's archive API, which is prone to secondary
-    # rate limits on shared IPs. flake.lock pins the resolved revisions.
-    nixpkgs.url = "git+https://github.com/NixOS/nixpkgs.git?ref=nixpkgs-unstable&shallow=1";
+    # nixpkgs uses the GitHub tarball fetcher: a shallow git clone of nixpkgs
+    # is hundreds of MB vs a ~40MB archive. The small inputs below stay on
+    # git+https, which avoids GitHub's archive-API rate limits on shared IPs.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nix-darwin = {
       url = "git+https://github.com/nix-darwin/nix-darwin.git?ref=master&shallow=1";
       inputs.nixpkgs.follows = "nixpkgs";
