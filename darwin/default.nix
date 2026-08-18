@@ -19,5 +19,9 @@
 
   programs.zsh.enable = true;
 
+  # Skip building manpages/options docs for the system: faster switches, and
+  # avoids the options.json store-path-context warning with git-fetched flakes.
+  documentation.enable = false;
+
   system.stateVersion = 6;
 }

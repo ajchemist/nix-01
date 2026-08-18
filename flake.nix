@@ -88,7 +88,12 @@
             '';
           };
 
-          plan = pkgs.writeShellApplication {
+          # The read-only `#plan` app must NOT reference the built system
+          # closure — interpolating `toplevel` would make `nix run .#plan`
+          # build/download the entire darwin system. The light variant only
+          # inspects local state; the exact variant (used inside `bootstrap`,
+          # which builds the system anyway) compares against the real target.
+          mkPlan = { exactToplevel ? null }: pkgs.writeShellApplication {
             name = "plan";
             text = ''
               row() { printf '  [%s] %-15s %-46s %s\n' "$@"; }
@@ -101,11 +106,19 @@
                 row "•" homebrew "Homebrew package manager" "install"
               fi
               current="$(readlink /run/current-system 2>/dev/null || true)"
-              if [ "$current" = "${toplevel}" ]; then
+              ${if exactToplevel != null then ''
+              if [ "$current" = "${exactToplevel}" ]; then
                 row "✓" nix-darwin "system profile" "up to date"
               else
                 row "•" nix-darwin "system profile" "activate new generation"
               fi
+              '' else ''
+              if [ -n "$current" ]; then
+                row "✓" nix-darwin "system profile" "installed · converge on switch"
+              else
+                row "•" nix-darwin "system profile" "activate new generation"
+              fi
+              ''}
               if [ -d /Applications/Karabiner-Elements.app ]; then
                 row "✓" karabiner "Karabiner-Elements (homebrew cask)" "converge on switch"
               else
@@ -120,6 +133,9 @@
             '';
           };
 
+          plan = mkPlan { };
+          planExact = mkPlan { exactToplevel = toplevel; };
+
           bootstrap = pkgs.writeShellApplication {
             name = "bootstrap";
             text = ''
@@ -133,7 +149,7 @@
                 esac
               done
 
-              ${lib.getExe plan}
+              ${lib.getExe planExact}
               if [ "$dry_run" = 1 ]; then
                 echo "(dry run — nothing was changed)"
                 exit 0
@@ -157,7 +173,7 @@
               ${lib.getExe darwin}
               echo ""
               echo "result:"
-              ${lib.getExe plan}
+              ${lib.getExe planExact}
             '';
           };
         in
