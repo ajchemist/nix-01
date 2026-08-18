@@ -56,6 +56,8 @@
 
           karabiner-rule = pkgs.writeShellApplication {
             name = "karabiner-rule";
+            # SC2016: single-quoted jq programs intentionally contain $vars
+            excludeShellChecks = [ "SC2016" ];
             text = import ./lib/karabiner-upsert.nix { inherit pkgs lib ruleFile; };
           };
 

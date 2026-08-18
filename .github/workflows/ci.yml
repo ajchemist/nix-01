@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  flake-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Evaluate all outputs
+        run: nix flake check --all-systems --no-build
+
+  darwin:
+    runs-on: macos-latest # arm64, matches darwinConfigurations.default
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build full darwin system closure
+        run: nix build .#darwinConfigurations.default.system
+      - name: Run plan app (read-only)
+        run: nix run .#plan
+      - name: Default app dry-run
+        run: nix run . -- --dry-run
+      - name: Karabiner rule module (applies to runner HOME)
+        run: ./ci/test-karabiner-rule.sh
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build home-manager activation package
+        run: nix build .#homeConfigurations.fixture-linux.activationPackage
