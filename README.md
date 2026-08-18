@@ -37,7 +37,7 @@ nix run 'git+https://github.com/ajchemist/nix-basecamp.git#homebrew'       # jus
 The plan looks like:
 
 ```
-nix-basecamp · Darwin (arm64) · darwinConfigurations.default
+nix-basecamp · Darwin (arm64) · target user: alice
 
   [•] homebrew        Homebrew package manager                       install
   [•] nix-darwin      system profile                                 activate new generation
@@ -49,15 +49,23 @@ Proceed? [y/N]
 
 ## What is managed
 
-- **macOS** (`darwinConfigurations.default`, aarch64): nix-darwin + home-manager,
-  Homebrew casks (Karabiner-Elements), and Karabiner complex-modification rules
-  upserted into the selected profile of `~/.config/karabiner/karabiner.json`
+- **macOS** (aarch64): nix-darwin + home-manager, Homebrew casks
+  (Karabiner-Elements), and Karabiner complex-modification rules upserted into
+  the selected profile of `~/.config/karabiner/karabiner.json`
   (idempotent jq merge — safe against an existing, hand-edited config).
-- **Linux** (`homeConfigurations.fixture-linux`, x86_64): standalone home-manager.
+- **Linux** (x86_64): standalone home-manager.
 
-Activation uses the flake-built system closure directly
-(`nix-env --profile /nix/var/nix/profiles/system --set` + `activate`), so there
-is no nested flake evaluation and no PATH/sudo juggling.
+## Target user is a runtime parameter
+
+The repo contains no personal usernames. The apps detect the invoking user
+(`id -un`) at runtime and evaluate `lib.mkDarwin { user = ...; }` /
+`lib.mkHome { user = ...; }` impurely, so the same command works for any
+account on any machine. The pure `darwinConfigurations.fixture` /
+`homeConfigurations.fixture` outputs exist only for CI and `nix flake check`.
+
+Activation registers the built system closure directly
+(`nix-env --profile /nix/var/nix/profiles/system --set` + `activate`), so
+there is no PATH/sudo juggling.
 
 ## Layout
 
@@ -81,5 +89,5 @@ nix run .            # or: nix run .#darwin
 
 - `nix.enable = false` in nix-darwin: the Determinate installer owns the nix
   daemon and `/etc/nix/nix.conf`.
-- Username (`fixture`) and darwin arch (aarch64) are currently hardcoded in
-  `flake.nix`; per-host/per-user parametrization is the next step.
+- Per-host module variation is supported via `lib.mkDarwin { modules = [...]; }`
+  but not yet wired to any host detection.

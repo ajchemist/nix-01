@@ -1,5 +1,5 @@
 {
-  description = "One-command system setup: nix run git+https://github.com/ajchemist/nix-basecamp.git";
+  description = "nix-basecamp: one-command basecamp setup for any machine, including temporary ones";
 
   inputs = {
     # nixpkgs uses the GitHub tarball fetcher: a shallow git clone of nixpkgs
@@ -20,11 +20,40 @@
     let
       lib = nixpkgs.lib;
 
-      # TODO: parametrize per-host/per-user once more machines are added
-      user = "fixture";
-
       ruleFile = ./home/karabiner/korean-left-modifiers.json;
       ruleDesc = (builtins.fromJSON (builtins.readFile ruleFile)).description;
+
+      # The target user is a RUNTIME parameter: the apps detect the invoking
+      # user (`id -un`) and evaluate these builders impurely, so this repo
+      # contains no personal usernames. The `fixture` configurations below
+      # exist only so CI and `nix flake check` have a pure, neutral instance.
+      mkDarwin = { user, system ? "aarch64-darwin", modules ? [ ] }:
+        nix-darwin.lib.darwinSystem {
+          modules = [
+            ./darwin/default.nix
+            home-manager.darwinModules.home-manager
+            {
+              nixpkgs.hostPlatform = system;
+              system.primaryUser = user;
+              users.users.${user}.home = "/Users/${user}";
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.users.${user} = import ./home/darwin.nix;
+            }
+          ] ++ modules;
+        };
+
+      mkHome = { user, homeDirectory ? "/home/${user}", system ? "x86_64-linux", modules ? [ ] }:
+        home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./home/linux.nix
+            {
+              home.username = user;
+              home.homeDirectory = homeDirectory;
+            }
+          ] ++ modules;
+        };
 
       mkApp = desc: drv: {
         type = "app";
@@ -33,26 +62,16 @@
       };
     in
     {
-      # ------------------------------------------------------------------ macOS
-      darwinConfigurations.default = nix-darwin.lib.darwinSystem {
-        modules = [
-          ./darwin/default.nix
-          home-manager.darwinModules.home-manager
-          {
-            nixpkgs.hostPlatform = "aarch64-darwin";
-            system.primaryUser = user;
-            users.users.${user}.home = "/Users/${user}";
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.users.${user} = import ./home/darwin.nix;
-          }
-        ];
-      };
+      lib = { inherit mkDarwin mkHome; };
 
+      darwinConfigurations.fixture = mkDarwin { user = "fixture"; };
+      homeConfigurations.fixture = mkHome { user = "fixture"; };
+
+      # ------------------------------------------------------------------ macOS
       apps.aarch64-darwin =
         let
           pkgs = nixpkgs.legacyPackages.aarch64-darwin;
-          toplevel = self.darwinConfigurations.default.system;
+          nixBin = "${pkgs.nix}/bin";
 
           karabiner-rule = pkgs.writeShellApplication {
             name = "karabiner-rule";
@@ -77,6 +96,23 @@
           darwin = pkgs.writeShellApplication {
             name = "darwin";
             text = ''
+              user="$(id -un)"
+              if ! printf '%s' "$user" | grep -Eq '^[A-Za-z_][A-Za-z0-9._-]*$'; then
+                echo "darwin: unsupported username: $user" >&2
+                exit 1
+              fi
+
+              echo "darwin: building system configuration for user $user"
+              toplevel="$(${nixBin}/nix build --impure --no-link --print-out-paths \
+                --extra-experimental-features "nix-command flakes" \
+                --expr "((builtins.getFlake \"path:${self}\").lib.mkDarwin { user = \"$user\"; }).system")"
+
+              current="$(readlink /run/current-system 2>/dev/null || true)"
+              if [ "$current" = "$toplevel" ]; then
+                echo "darwin: already up to date"
+                exit 0
+              fi
+
               # nix-darwin refuses to activate over these pre-existing files;
               # move them aside once (they are replaced by symlinks).
               for f in /etc/bashrc /etc/zshrc /etc/zshenv; do
@@ -85,43 +121,32 @@
                   sudo mv "$f" "$f.before-nix-darwin"
                 fi
               done
-              echo "darwin: activating darwinConfigurations.default"
-              sudo ${pkgs.nix}/bin/nix-env --profile /nix/var/nix/profiles/system --set ${toplevel}
-              sudo ${toplevel}/activate
+
+              echo "darwin: activating $toplevel"
+              sudo ${nixBin}/nix-env --profile /nix/var/nix/profiles/system --set "$toplevel"
+              sudo "$toplevel/activate"
             '';
           };
 
-          # The read-only `#plan` app must NOT reference the built system
-          # closure — interpolating `toplevel` would make `nix run .#plan`
-          # build/download the entire darwin system. The light variant only
-          # inspects local state; the exact variant (used inside `bootstrap`,
-          # which builds the system anyway) compares against the real target.
-          mkPlan = { exactToplevel ? null }: pkgs.writeShellApplication {
+          # Read-only status. Deliberately does NOT evaluate or build the
+          # system closure, so `nix run .#plan` stays instant.
+          plan = pkgs.writeShellApplication {
             name = "plan";
             text = ''
               row() { printf '  [%s] %-15s %-46s %s\n' "$@"; }
               echo ""
-              echo "nix-basecamp · $(uname -s) ($(uname -m)) · darwinConfigurations.default"
+              echo "nix-basecamp · $(uname -s) ($(uname -m)) · target user: $(id -un)"
               echo ""
               if command -v brew >/dev/null 2>&1; then
                 row "✓" homebrew "Homebrew package manager" "up to date"
               else
                 row "•" homebrew "Homebrew package manager" "install"
               fi
-              current="$(readlink /run/current-system 2>/dev/null || true)"
-              ${if exactToplevel != null then ''
-              if [ "$current" = "${exactToplevel}" ]; then
-                row "✓" nix-darwin "system profile" "up to date"
-              else
-                row "•" nix-darwin "system profile" "activate new generation"
-              fi
-              '' else ''
-              if [ -n "$current" ]; then
+              if [ -e /run/current-system ]; then
                 row "✓" nix-darwin "system profile" "installed · converge on switch"
               else
                 row "•" nix-darwin "system profile" "activate new generation"
               fi
-              ''}
               if [ -d /Applications/Karabiner-Elements.app ]; then
                 row "✓" karabiner "Karabiner-Elements (homebrew cask)" "converge on switch"
               else
@@ -136,9 +161,6 @@
             '';
           };
 
-          plan = mkPlan { };
-          planExact = mkPlan { exactToplevel = toplevel; };
-
           bootstrap = pkgs.writeShellApplication {
             name = "bootstrap";
             text = ''
@@ -152,7 +174,7 @@
                 esac
               done
 
-              ${lib.getExe planExact}
+              ${lib.getExe plan}
               if [ "$dry_run" = 1 ]; then
                 echo "(dry run — nothing was changed)"
                 exit 0
@@ -176,43 +198,43 @@
               ${lib.getExe darwin}
               echo ""
               echo "result:"
-              ${lib.getExe planExact}
+              ${lib.getExe plan}
             '';
           };
         in
         {
-          default = mkApp "Plan, confirm, and apply the full macOS setup" bootstrap;
+          default = mkApp "Plan, confirm, and apply the full macOS setup for the invoking user" bootstrap;
           plan = mkApp "Show module status (read-only)" plan;
           homebrew = mkApp "Install Homebrew if missing" homebrew;
-          darwin = mkApp "Activate darwinConfigurations.default (nix-darwin)" darwin;
+          darwin = mkApp "Build and activate the nix-darwin system for the invoking user" darwin;
           karabiner-rule = mkApp "Upsert the Korean-mode left-modifier rule into karabiner.json" karabiner-rule;
         };
 
       # ------------------------------------------------------------------ Linux
-      homeConfigurations."${user}-linux" = home-manager.lib.homeManagerConfiguration {
-        pkgs = nixpkgs.legacyPackages.x86_64-linux;
-        modules = [
-          ./home/linux.nix
-          {
-            home.username = user;
-            home.homeDirectory = "/home/${user}";
-          }
-        ];
-      };
-
       apps.x86_64-linux =
         let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
           home = pkgs.writeShellApplication {
             name = "home";
             text = ''
-              exec ${self.homeConfigurations."${user}-linux".activationPackage}/activate
+              user="$(id -un)"
+              if ! printf '%s' "$user" | grep -Eq '^[A-Za-z_][A-Za-z0-9._-]*$'; then
+                echo "home: unsupported username: $user" >&2
+                exit 1
+              fi
+
+              echo "home: building home-manager configuration for $user ($HOME)"
+              out="$(${pkgs.nix}/bin/nix build --impure --no-link --print-out-paths \
+                --extra-experimental-features "nix-command flakes" \
+                --expr "((builtins.getFlake \"path:${self}\").lib.mkHome { user = \"$user\"; homeDirectory = \"$HOME\"; }).activationPackage")"
+
+              exec "$out/activate"
             '';
           };
         in
         {
-          default = mkApp "Activate the home-manager configuration" home;
-          home = mkApp "Activate the home-manager configuration" home;
+          default = mkApp "Build and activate the home-manager configuration for the invoking user" home;
+          home = mkApp "Build and activate the home-manager configuration for the invoking user" home;
         };
     };
 }

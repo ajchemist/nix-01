@@ -20,12 +20,12 @@ jobs:
         run: nix flake check --all-systems --no-build
 
   darwin:
-    runs-on: macos-latest # arm64, matches darwinConfigurations.default
+    runs-on: macos-latest # arm64
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - name: Build full darwin system closure
-        run: nix build .#darwinConfigurations.default.system
+      - name: Build full darwin system closure (fixture user)
+        run: nix build .#darwinConfigurations.fixture.system
       - name: Run plan app (read-only)
         run: nix run .#plan
       - name: Default app dry-run
@@ -33,10 +33,30 @@ jobs:
       - name: Karabiner rule module (applies to runner HOME)
         run: ./ci/test-karabiner-rule.sh
 
+  # Full end-to-end: the product one-liner, applied to the runner itself.
+  # The runner user is auto-detected at runtime; passwordless sudo activates
+  # nix-darwin for real.
+  darwin-activate:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Apply full setup to the runner
+        run: nix run . -- --yes
+      - name: Assert system profile is active
+        run: |
+          readlink /run/current-system
+          /run/current-system/sw/bin/jq --version
+      - name: Assert karabiner rule deployed to runner HOME
+        run: |
+          jq -e '[.profiles[] | select(.selected == true)
+                  | .complex_modifications.rules[].description]
+                 | length >= 1' "$HOME/.config/karabiner/karabiner.json"
+
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - name: Build home-manager activation package
-        run: nix build .#homeConfigurations.fixture-linux.activationPackage
+      - name: Build home-manager activation package (fixture user)
+        run: nix build .#homeConfigurations.fixture.activationPackage
