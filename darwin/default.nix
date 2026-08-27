@@ -12,6 +12,9 @@
 
   homebrew = {
     enable = true;
+    # Declared casks/formulae are the only ones allowed to stay: anything
+    # installed by hand is uninstalled on switch (no drift between machines).
+    onActivation.cleanup = "uninstall";
     casks = [
       "karabiner-elements"
     ];
