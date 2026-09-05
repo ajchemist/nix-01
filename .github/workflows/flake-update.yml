@@ -1,0 +1,87 @@
+name: flake.lock update
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily, 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency: flake-update
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      date: ${{ steps.diff.outputs.date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: nix flake update
+      - id: diff
+        run: |
+          echo "changed=$(git diff --quiet flake.lock && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.diff.outputs.changed == 'true'
+        with: { name: flake.lock, path: flake.lock }
+
+  # The same checks as ci.yml, run against the updated lock.
+  check:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: flake.lock }
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: nix flake check --all-systems --no-build
+      - if: runner.os == 'Linux'
+        run: nix build .#homeConfigurations.fixture.activationPackage
+      - if: runner.os == 'macOS'
+        run: |
+          nix build .#darwinConfigurations.fixture.system
+          nix run .#plan
+          nix run . -- --dry-run
+          ./ci/test-karabiner-rule.sh
+          nix run . -- --yes
+          readlink /run/current-system
+          /run/current-system/sw/bin/jq --version
+          jq -e '[.profiles[] | select(.selected == true)
+                  | .complex_modifications.rules[].description]
+                 | length >= 1' "$HOME/.config/karabiner/karabiner.json"
+
+  land:
+    needs: [update, check]
+    if: always() && needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: flake.lock }
+      - name: Push to main (checks passed)
+        if: needs.check.result == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "flake.lock: automated update ${{ needs.update.outputs.date }}"
+          git push origin HEAD:main
+      - name: Open PR (checks failed)
+        if: needs.check.result != 'success'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: flake-update
+          delete-branch: true
+          commit-message: "flake.lock: automated update ${{ needs.update.outputs.date }}"
+          title: "flake.lock: automated update ${{ needs.update.outputs.date }}"
+          body: |
+            Automated `nix flake update`; the checks failed:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
